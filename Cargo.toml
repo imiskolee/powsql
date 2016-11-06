@@ -1,0 +1,14 @@
+[package]
+name = "powsql"
+version = "0.0.1"
+authors = ["Misko Lee imiskolee@gmail.com"]
+
+[dependencies]
+log = "0.3.6"
+byteorder="*"
+mioco = "*"
+sha1="0.2.0"
+lazy_static="*"
+[[test]]
+name = "test"
+path = "test/mod.rs"
