@@ -1,8 +1,8 @@
-use super::data_type;
 use super::data_type::{ReadBytesExt, WriteBytesExt, Int1, Int2,Int3, Int8, Bytes};
 use super::consts;
 use std::io::{Result,Cursor,Error,ErrorKind,Read,Write};
 
+#[derive(Debug)]
 pub struct PacketRaw {
     pub payload_len:Int3,
     pub sequence_id:Int1,
@@ -12,7 +12,7 @@ pub struct PacketRaw {
 impl PacketRaw {
 
   pub fn read_packet(&mut self,flag:consts::ProtocolConst) -> Result<PacketOption> {
-        let mut packet = PacketOption::None;
+  
         // parse raw packet
      
         //the EOF packet may appear in places where a Protocol::LengthEncodedInteger may appear. You must check whether the packet length is less than 9 to make sure that it is a EOF packet.
@@ -22,15 +22,15 @@ impl PacketRaw {
         }
       self.payload.read_int1().and_then(|first_byte| {
 
-            let common_err = Err(Error::new(ErrorKind::InvalidInput,"unsupprtoed packet type"));
+            let common_err = Err(Error::new(ErrorKind::InvalidData,"unsupprtoed packet type"));
 
             match first_byte {
                 // Ok Packet
                 PACKET_HEDAER_OK => {
                     let p = PacketOK::from_reader(flag,&mut  self.payload);
                     match p {
-                        Ok(v) => Ok(PacketOption::Ok(v)),
-                        _ => common_err,
+                        Ok(v) =>  Ok(PacketOption::Ok(v)),
+                        Err(e) => Err(e),
                     }
                 }
                 // EOF packet
@@ -38,7 +38,7 @@ impl PacketRaw {
                     let p = PacketEOF::from_reader(flag,&mut  self.payload);
                     match p {
                         Ok(v) => Ok(PacketOption::Eof(v)),
-                        _ => common_err,
+                        Err(e) => Err(e),
                     }
                 }
                 // ERR  Packet
@@ -46,14 +46,13 @@ impl PacketRaw {
                     let p = PacketERR::from_reader(flag,&mut  self.payload);
                     match p {
                         Ok(v) => Ok(PacketOption::Err(v)),
-                        _ => common_err,
+                        Err(e) => Err(e),
                     }
                 }
                 _ => {
                     common_err
                 }
-            };
-            Ok(PacketOption::None)
+            }
         })
     }
 
@@ -71,7 +70,7 @@ impl PacketRaw {
 }
 
 
-
+#[derive(Debug)]
 pub struct PacketOK {
     header:Int1,
     pub affected_rows:Int8,
@@ -81,7 +80,7 @@ pub struct PacketOK {
     pub info: Bytes,
     pub session_state_changes: Bytes
 }
-
+#[derive(Debug)]
 pub struct PacketERR {
     header:Int1,
     pub  error_code:Int2,
@@ -89,7 +88,7 @@ pub struct PacketERR {
     pub sql_state: Bytes,
     pub error_message: Bytes
 }
-
+#[derive(Debug)]
 pub struct PacketEOF {
     header: Int1,
     pub warnings:Int2,
@@ -100,6 +99,7 @@ const PACKET_HEDAER_OK:Int1 = 0x00;
 const PACKET_HEADER_EOF:Int1 = 0xfe;
 const PACKET_HEADER_ERR:Int1 = 0xff;
 
+#[derive(Debug)]
 pub enum PacketOption {
     Ok(PacketOK),
     Err(PacketERR),
@@ -326,8 +326,11 @@ impl PacketERR {
 
     pub fn from_reader<T:ReadBytesExt+ ?Sized>(flag:consts::ProtocolConst, reader:&mut T) -> Result<PacketERR> {
         let mut packet:PacketERR = Default::default();
+
+    
         reader.read_int2().map(|num|packet.error_code = num)
             .and_then(|n|{
+                println!("1 {:?}",packet);
                 if flag & consts::CAPABILITY_FLAG_CLIENT_PROTOCOL_41 > 0 {
                     return reader.read_str_varlen(1).map(|s|packet.sql_state_marker=s)
                         .and(reader.read_str_varlen(5).map(|s|packet.sql_state=s));
@@ -335,6 +338,7 @@ impl PacketERR {
                 Ok(n)
             })
             .and_then(|_|{
+                println!("2 {:?}",packet);
                 return reader.read_str_eof().map(|s|{packet.error_message  = s})
             })
             .and_then(|_|{
@@ -403,11 +407,15 @@ pub trait PacketStream: ReadBytesExt + WriteBytesExt {
             };
          Ok(packet)
     }
-    
+
     fn write_raw_packet(&mut self,packet:&PacketRaw) -> Result<()> {
-        self.write_int3(packet.payload_len)
-            .and_then(|_|{self.write_int1(packet.sequence_id)})
-            .and_then(|_|{self.write_str_varlen(packet.payload.get_ref(),packet.payload_len as Int8)})
+        let mut buffer = Vec::new();
+        buffer.write_int3(packet.payload_len)
+            .and_then(|_|{buffer.write_int1(packet.sequence_id)})
+            .and_then(|_|{buffer.write_str_varlen(packet.payload.get_ref(),packet.payload_len as Int8)})
+            .and_then(|_|{
+                self.write_str_varlen(&buffer,buffer.len() as Int8)
+            })
     }
 }
 

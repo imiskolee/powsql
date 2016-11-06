@@ -7,8 +7,8 @@ authors = ["Misko Lee imiskolee@gmail.com"]
 log = "0.3.6"
 byteorder="*"
 mioco = "*"
-sha1="0.2.0"
 lazy_static="*"
+openssl="*"
 [[test]]
 name = "test"
 path = "test/mod.rs"

@@ -5,6 +5,7 @@ use super::super::protocol::auth;
 use super::super::protocol::consts;
 use std::net::TcpStream;
 use std::io::{Result,Error,ErrorKind};
+
 pub struct BackendConnection {
     connection_id : Int4,
     capability:Int4,
@@ -34,7 +35,7 @@ impl BackendConnection {
         }
     }
 
-    pub fn init(&mut self) -> Result<()> {
+    pub fn init(&mut self) -> Result<PacketOption> {
         self.connect()
             .and_then(|_|{
                 self.read_handshake()
@@ -42,15 +43,17 @@ impl BackendConnection {
             .and_then(|_|{
                 self.write_handshake()
                     .and_then(|packet_option|{
+                        println!("{:?}",packet_option);
                         match packet_option {
                             PacketOption::Err(err) => Err(Error::new(ErrorKind::InvalidInput,err.error_message.as_str())),
-                            _ => Ok(())
+                            _ => Ok(packet_option)
                         }
                     })
             })
     }
     
     fn connect(&mut self) -> Result<()> {
+        println!("connection");
         if self.addr.len() < 1 {
             return Err(Error::new(ErrorKind::InvalidData,"miss addr"))
         }
@@ -62,6 +65,7 @@ impl BackendConnection {
     }
 
     fn read_handshake(&mut self) -> Result<()> {
+        println!("read_handshake");
         match self.stream.as_mut().unwrap().read_handshake_v10() {
             Err(e) => return Err(e),
             Ok(packet) => {
@@ -76,12 +80,18 @@ impl BackendConnection {
         Ok(())
     }
 
-    
     fn write_handshake(&mut self) -> Result<PacketOption> {
-
+        println!("write_handshake");
         let mut response:HandshakeResponse41 = HandshakeResponse41::new();
 
-        response.capability = self.capability;
+        response.capability =
+
+            consts::CAPABILITY_FLAG_CLIENT_PROTOCOL_41 as Int4
+            | consts::CAPABILITY_FLAG_CLIENT_PLUGIN_AUTH as Int4
+            | consts::CAPABILITY_FLAG_CLIENT_SECURE_CONNECTION as Int4;
+
+        response.capability = self.capability & response.capability;
+
         response.charset = self.charset;
         response.username = self.username.clone();
         response.database = self.db.clone();
@@ -100,6 +110,7 @@ impl BackendConnection {
             .and_then(|_|{
                 self.stream.as_mut().unwrap().read_raw_packet()
                     .and_then(|mut packet|{
+                        println!("packet {:?}",packet);
                         packet.read_packet(response.capability as consts::ProtocolConst)
                     })
             })

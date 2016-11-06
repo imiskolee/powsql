@@ -1,6 +1,7 @@
-extern crate sha1;
-use super::data_type::{Bytes};
-use self::sha1::Sha1;
+extern crate openssl;
+use self::openssl::hash;
+use self::openssl::hash::MessageDigest;
+use super::data_type::{Bytes,Int1,AsStr};
 
 //https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
 pub const AUTH_METHOD_SECURE:&'static str = "mysql_native_password";
@@ -22,35 +23,26 @@ pub fn get_password_handle(name:&'static str) -> Option<PasswordHandle> {
     }
 }
 
+
 //mysql native password
 fn get_secure_password_slat(slat:&Bytes,password:&Bytes) -> Bytes {
-    let mut sha1_password = Sha1::new();
-    sha1_password.reset();
-    sha1_password.update(password);
-    let s1 = sha1_password.digest();
-    
-    let mut sha1_2 = Sha1::new();
-    sha1_2.reset();
-    sha1_2.update(s1.to_string().as_bytes());
-    let s2 = sha1_2.digest();
+    let  s1 = hash::hash(hash::MessageDigest::sha1(),password).unwrap();
+    let s2 = hash::hash(hash::MessageDigest::sha1(),&s1).unwrap();
     
     let mut slat_cpy = Vec::from(slat.clone());
     //todo fix
-    for c in s2.to_string().as_bytes().iter() {
+    for c in s2.iter() {
         slat_cpy.push(*c);
     }
+    let s3 = hash::hash(hash::MessageDigest::sha1(),&slat_cpy).unwrap();
 
-    let mut sha1_3 = Sha1::new();
-    sha1_3.reset();
-    sha1_3.update(&slat_cpy);
-    let s3 = sha1_3.digest();
     let mut i = 0;
-    let mut ret = Vec::with_capacity(s1.to_string().len());
-    for c in s1.to_string().as_bytes().iter() {
-        ret.push(*c ^ (*s3.to_string().as_bytes())[i]);
+    let mut ret = Vec::with_capacity(0);
+    for c in s1.iter() {
+        ret.push(*c ^ (s3[i]) as Int1);
         i += 1;
     }
-    return ret;
+    return ret
 }
 
 

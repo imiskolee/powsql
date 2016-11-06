@@ -3,7 +3,7 @@ mysql handshake packet reader & writer
 https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
 **/
 use super::data_type;
-use super::data_type::{Int1, Int2, Int3, Int4, Int8, Bytes, ReadBytesExt, WriteBytesExt,};
+use super::data_type::{Int1, Int2, Int3, Int4, Int8, Bytes, ReadBytesExt, WriteBytesExt,AsStr};
 use std::collections::HashMap;
 use std::io::Result;
 use std::io::Write;
@@ -62,12 +62,13 @@ impl HandshakeResponse41 {
         let mut packet:HandshakeResponse41 = Default::default();
         packet.reserved = Vec::with_capacity(23);
         packet.max_packet_size = data_type::INT3MAX;
-        unsafe{
-            packet.reserved.set_len(23);
+        for _ in 0..23 {
+            packet.reserved.push(0)
         }
         packet
     }
 }
+
 
 
 pub trait HandshakeStream: ReadBytesExt + WriteBytesExt {
@@ -164,7 +165,7 @@ pub trait HandshakeStream: ReadBytesExt + WriteBytesExt {
                 if packet.capability as consts::ProtocolConst &
                    consts::CAPABILITY_FLAG_CLIENT_SECURE_CONNECTION > 0 {
                     return raw_packet.payload
-                           .read_str_varlen(cmp::min(13,((packet.auth_plugin_data_len as u8) - 8) as u64))
+                           .read_str_eof()
                         .map(|s| packet.auth_plugin_data_part_2 = s);
                 }
                 Ok(())
@@ -233,7 +234,6 @@ pub trait HandshakeStream: ReadBytesExt + WriteBytesExt {
                 Ok(())
             })
             .and_then(|_|{
-                println!("{:?}",packet);
                 if packet.capability as consts::ProtocolConst & consts::CAPABILITY_FLAG_CLIENT_CONNECT_ATTRS> 0 {
                    return  raw_packet.payload.read_int_enclen()
                         .and_then(|num|{
@@ -280,7 +280,7 @@ pub trait HandshakeStream: ReadBytesExt + WriteBytesExt {
                 if (r.capability as consts::ProtocolConst & consts::CAPABILITY_FLAG_CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA > 0) ||
                     (r.capability as consts::ProtocolConst & consts::CAPABILITY_FLAG_CLIENT_SECURE_CONNECTION > 0) {
                     return writer.write_int_enclen(r.auth_response_len)
-                            .and(writer.write_str_varlen(&r.auth_response,cmp::min(13,r.auth_response_len -8)));
+                            .and(writer.write_str_varlen(&r.auth_response,r.auth_response_len));
                 }
                 return writer.write_str_eof(&r.auth_response);
             })
@@ -288,6 +288,7 @@ pub trait HandshakeStream: ReadBytesExt + WriteBytesExt {
                 if r.capability as consts::ProtocolConst & consts::CAPABILITY_FLAG_CLIENT_CONNECT_WITH_DB > 0 {
                     return writer.write_str_eof(&r.database);
                 }
+
                 Ok(())
             })
             .and_then(|_| {
@@ -315,18 +316,24 @@ pub trait HandshakeStream: ReadBytesExt + WriteBytesExt {
                 Ok(())
             })
             .and_then(|_|{
+                unsafe {
                 let mut packet:PacketRaw = PacketRaw{
                     payload_len : 0,
-                    sequence_id : 0,
+                    sequence_id : seq,
                     payload: Cursor::new(vec![])
                 };
-                packet.payload_len = writer.len() as Int3;
-                packet.sequence_id = 0;
-                packet.payload = Cursor::new(writer);
-                self.write_raw_packet(&packet)
+                    seq += 1;
+                    packet.payload_len = writer.len() as Int3;
+                    packet.sequence_id = 1;
+                    packet.payload = Cursor::new(writer);
+                    self.write_raw_packet(&packet)
+
+                }
+               
             })
     }
 }
 
+static mut seq:Int1 = 1;
 
 impl<R: Write + Read + ?Sized> HandshakeStream for R {}

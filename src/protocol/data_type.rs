@@ -11,6 +11,7 @@ use std::io;
 use std::mem;
 
 use self::byteorder::LittleEndian;
+use self::byteorder::NativeEndian;
 pub type Int1 = u8;
 pub type Int2 = u16;
 pub type Int3 = u32;
@@ -108,12 +109,12 @@ pub trait ReadBytesExt : byteorder::ReadBytesExt + io::Read{
                     }
                     s.push(i);
                 },
-                Err(e) => return Err(e),
+                _ => break,
             }
         };
         Ok(s)
     }
-    
+
     //Protocol::NulTerminatedBytesing
     fn read_str_nul(&mut self) -> Result<Bytes> {
         self.read_str_eof()
@@ -188,9 +189,7 @@ pub trait WriteBytesExt : byteorder::WriteBytesExt + io::Write{
     
     #[inline]
     fn write_str_varlen(&mut self,data:&Bytes,num:Int8) -> Result<()> {
-
         if data.len() < (num as usize) {
-            println!("debug {} {:?}",data.as_str(),data);
             return Err(Error::new(io::ErrorKind::InvalidInput,"num is lt str.len()"))
         }
         self.write_all(&(data)[0..(num as usize)])
@@ -221,7 +220,6 @@ pub trait WriteBytesExt : byteorder::WriteBytesExt + io::Write{
         }
         Ok(())
     }
-
 }
 
 impl<R: io::Write + ?Sized> WriteBytesExt for R {}
